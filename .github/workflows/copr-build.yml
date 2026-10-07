@@ -84,7 +84,7 @@ jobs:
 
           case "$EXT" in
             rpm)
-              rpm2archive ../payload/upstream.rpm | tar -xf -
+              rpm2archive ../payload/upstream.rpm | tar -xzf -
               ;;
             deb)
               ar x ../payload/upstream.deb
