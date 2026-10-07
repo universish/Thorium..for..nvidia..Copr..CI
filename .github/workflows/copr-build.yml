@@ -14,13 +14,22 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: fedora:40
-    steps:
+      steps:
+      # 1. Önce git ve gerekli araçları kurun
       - name: Gerekli Paketleri Yükle
         run: |
           dnf install -y git curl jq cpio rpm-build rpmdevtools copr-cli binutils p7zip tar zstd gzip python3 desktop-file-utils
 
+      # 2. Git için güvenli dizin tanımlayın (Dubious ownership engelini aşar)
+      - name: Git Güvenli Dizin Yapılandırması
+        run: |
+          git config --global --add safe.directory '*'
+
+      # 3. Git artık kurulu olduğu için .git klasörüyle birlikte tam klonlanır
       - name: Depoyu Klonla
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Upstream Sürümlerini ve İndirilebilir Varlıkları Denetle
         id: fetch-assets
@@ -206,7 +215,32 @@ jobs:
               with open(output_desktop, 'w', encoding='utf-8') as f:
                   f.write(clean_content)
           EOF
+          
+      - name: Sürüm ve Sayaç (Release Counter) Yönetimi
+        id: counter
+        run: |
+          STATE_FILE="state.json"
+          CURR_VER="${{ steps.fetch-assets.outputs.clean_version }}"
+          BUILD_NUM=1
 
+          if [ -f "$STATE_FILE" ]; then
+            SAVED_VER=$(jq -r '.version // empty' "$STATE_FILE")
+            SAVED_NUM=$(jq -r '.release // 0' "$STATE_FILE")
+            if [ "$SAVED_VER" = "$CURR_VER" ]; then
+              BUILD_NUM=$((SAVED_NUM + 1))
+            fi
+          fi
+
+          echo "{\"version\": \"$CURR_VER\", \"release\": $BUILD_NUM}" > "$STATE_FILE"
+          echo "release_num=$BUILD_NUM" >> "$GITHUB_OUTPUT"
+
+          # Git kimliğini ata ve değişiklikleri gönder
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "$STATE_FILE"
+          git commit -m "Auto-increment build: ${CURR_VER}-${BUILD_NUM}" || echo "Değişiklik yok"
+          git push origin HEAD:${{ github.ref_name }} || echo "Push atlandı"
+          
       - name: RPM ve SRPM Paketle
         run: |
           cd extract_dir/root_payload
