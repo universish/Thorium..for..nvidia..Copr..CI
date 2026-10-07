@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>thorium-browser.desktop</id>
+  <metadata_license>MIT</metadata_license>
+  <project_license>BSD-3-Clause</project_license>
+  <name>Thorium Browser</name>
+  <summary>High-performance AVX2/ARM64 Chromium browser with NVIDIA/Mesa hardware acceleration</summary>
+  <description>
+    <p>
+      Thorium is an optimized fork of Chromium featuring compiler-level optimizations (AVX2/NEON),
+      custom patches, and enhanced multimedia decoding capabilities. This package is pre-configured
+      for seamless NVIDIA VA-API integration while preserving native hardware acceleration across AMD, Intel, and industrial GPUs.
+    </p>
+  </description>
+  <launchable type="desktop-id">thorium-browser.desktop</launchable>
+  <url type="homepage">https://thorium.rocks/</url>
+  <url type="bugtracker">https://github.com/universish/Thorium..for..nvidia..Copr..CI/issues</url>
+  <provides>
+    <binary>thorium-browser</binary>
+  </provides>
+  <developer_name>Alex313031, gz83, universish</developer_name>
+</component>
