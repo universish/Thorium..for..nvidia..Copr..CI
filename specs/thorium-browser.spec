@@ -1,6 +1,6 @@
 Name:           thorium-browser
-Version:        %{_version}
-Release:        %{_release}%{?dist}
+Version:        1.0.0
+Release:        1%{?dist}
 Summary:        Compiler-optimized Chromium fork tuned for NVIDIA, AMD, and Intel hardware acceleration
 License:        BSD-3-Clause and MIT
 URL:            https://thorium.rocks/
