@@ -216,10 +216,12 @@ jobs:
           cp thorium-browser.metainfo.xml ~/rpmbuild/SOURCES/
           cp specs/thorium-browser.spec ~/rpmbuild/SPECS/
 
-          rpmbuild -bs \
-            --define "_version ${{ steps.fetch-assets.outputs.clean_version }}" \
-            --define "_release ${{ steps.counter.outputs.release_num }}" \
-            ~/rpmbuild/SPECS/thorium-browser.spec
+          # Spec dosyasındaki Version ve Release alanlarını kalıcı olarak gerçek değerlerle değiştir
+          SPEC_FILE=~/rpmbuild/SPECS/thorium-browser.spec
+          sed -i "s/^Version:.*/Version:        ${{ steps.fetch-assets.outputs.clean_version }}/" "$SPEC_FILE"
+          sed -i "s/^Release:.*/Release:        ${{ steps.counter.outputs.release_num }}%{?dist}/" "$SPEC_FILE"
+
+          rpmbuild -bs "$SPEC_FILE"
 
           mkdir -p out
           cp ~/rpmbuild/SRPMS/*.src.rpm out/
