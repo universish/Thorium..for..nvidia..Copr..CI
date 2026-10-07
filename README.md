@@ -84,6 +84,31 @@ sudo dnf copr disable universish/Thorium
 
 ```
 
+### Updating Packages
+
+To bypass local metadata caching and immediately pull new builds or packaging revisions (e.g., `<version>-1` to `<version>-2`):
+
+**`upgrade --refresh`:**
+
+```bash
+sudo dnf upgrade --refresh "proton-vpn*" "protonvpn*"
+```
+
+**If that doesn't work, follow these steps:**
+
+- Flush the cache:
+```
+sudo dnf clean all && sudo dnf makecache
+```
+- Install the CLI tool (it now comes directly from COPR):
+```
+sudo dnf install proton-vpn-cli
+```
+- Update or install the GUI application along with all its dependencies:
+```
+sudo dnf install proton-vpn-gnome-desktop proton-vpn-gtk-app
+```
+
 ### Optional: Remove User Configurations
 
 ```bash
