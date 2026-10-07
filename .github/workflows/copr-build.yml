@@ -84,7 +84,9 @@ jobs:
 
           case "$EXT" in
             rpm)
-              rpm2cpio ../payload/upstream.rpm | cpio -idmv
+              rpm2archive ../payload/upstream.rpm
+              tar -xf ../payload/upstream.rpm.tgz
+              rm -f ../payload/upstream.rpm.tgz
               ;;
             deb)
               ar x ../payload/upstream.deb
