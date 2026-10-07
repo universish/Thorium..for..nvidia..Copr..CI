@@ -91,7 +91,7 @@ To bypass local metadata caching and immediately pull new builds or packaging re
 **`upgrade --refresh`:**
 
 ```bash
-sudo dnf upgrade --refresh "proton-vpn*" "protonvpn*"
+sudo dnf upgrade --refresh "thorium*" "thorium-browser*" "thorium-browser"
 ```
 
 **If that doesn't work, follow these steps:**
@@ -100,13 +100,9 @@ sudo dnf upgrade --refresh "proton-vpn*" "protonvpn*"
 ```
 sudo dnf clean all && sudo dnf makecache
 ```
-- Install the CLI tool (it now comes directly from COPR):
+- Install the thorium (it now comes directly from COPR):
 ```
-sudo dnf install proton-vpn-cli
-```
-- Update or install the GUI application along with all its dependencies:
-```
-sudo dnf install proton-vpn-gnome-desktop proton-vpn-gtk-app
+sudo dnf install thorium-browser
 ```
 
 ### Optional: Remove User Configurations
