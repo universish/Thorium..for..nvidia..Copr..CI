@@ -1,0 +1,234 @@
+name: Thorium Upstream Sync & Copr Builder
+
+on:
+  schedule:
+    - cron: '30 4,10,17,22 * * *'
+  workflow_dispatch:
+
+jobs:
+  check-and-build:
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:40
+    steps:
+      - name: Gerekli Paketleri Yükle
+        run: |
+          dnf install -y git curl jq cpio rpm-build rpmdevtools copr-cli binutils p7zip tar zstd gzip python3 desktop-file-utils
+
+      - name: Depoyu Klonla
+        uses: actions/checkout@v4
+
+      - name: Upstream Sürümlerini ve İndirilebilir Varlıkları Denetle
+        id: fetch-assets
+        run: |
+          REPOS=("Alex313031/thorium" "gz83/thorium")
+          TARGET_TAG=""
+          DOWNLOAD_URL=""
+          EXT=""
+
+          find_asset() {
+            local repo=$1
+            local pattern=$2
+            local ext=$3
+            curl -s "https://api.github.com/repos/${repo}/releases/latest" | \
+              jq -r --arg pat "$pattern" --arg ext "$ext" \
+              '.assets[] | select(.name | test($pat; "i")) | select(.name | endswith($ext)) | .browser_download_url' | head -n 1
+          }
+
+          FOUND=0
+          # Öncelik Sıralaması: rpm -> AppImage -> deb -> zip
+          FORMATS=("rpm" "AppImage" "deb" "zip")
+
+          for repo in "${REPOS[@]}"; do
+            LATEST_TAG=$(curl -s "https://api.github.com/repos/${repo}/releases/latest" | jq -r '.tag_name // empty')
+            if [ -z "$LATEST_TAG" ]; then continue; fi
+
+            for fmt in "${FORMATS[@]}"; do
+              URL=$(find_asset "$repo" "AVX2" ".$fmt")
+              if [ -n "$URL" ]; then
+                DOWNLOAD_URL="$URL"
+                TARGET_TAG="$LATEST_TAG"
+                EXT="$fmt"
+                FOUND=1
+                break 2
+              fi
+            done
+          done
+
+          if [ $FOUND -eq 0 ]; then
+            echo "Yeni uyumlu varlık bulunamadı."
+            exit 0
+          fi
+
+          CLEAN_VER=$(echo "$TARGET_TAG" | sed 's/[^0-9.]*//g')
+          echo "clean_version=$CLEAN_VER" >> $GITHUB_OUTPUT
+          echo "download_url=$DOWNLOAD_URL" >> $GITHUB_OUTPUT
+          echo "ext=$EXT" >> $GITHUB_OUTPUT
+
+      - name: Sürüm ve Sayaç (Release Counter) Yönetimi
+        id: counter
+        run: |
+          STATE_FILE="state.json"
+          CURR_VER="${{ steps.fetch-assets.outputs.clean_version }}"
+          BUILD_NUM=1
+
+          if [ -f "$STATE_FILE" ]; then
+            SAVED_VER=$(jq -r '.version // empty' $STATE_FILE)
+            SAVED_NUM=$(jq -r '.release // 0' $STATE_FILE)
+            if [ "$SAVED_VER" == "$CURR_VER" ]; then
+              BUILD_NUM=$((SAVED_NUM + 1))
+            fi
+          fi
+
+          echo "{\"version\": \"$CURR_VER\", \"release\": $BUILD_NUM}" > $STATE_FILE
+          echo "release_num=$BUILD_NUM" >> $GITHUB_OUTPUT
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add $STATE_FILE
+          git commit -m "Auto-increment build: ${CURR_VER}-${BUILD_NUM}" || true
+          git push || true
+
+      - name: Kaynak İndir ve Çıkart
+        run: |
+          URL="${{ steps.fetch-assets.outputs.download_url }}"
+          EXT="${{ steps.fetch-assets.outputs.ext }}"
+          mkdir -p payload extract_dir
+
+          curl -sL "$URL" -o "payload/upstream.$EXT"
+          cd extract_dir
+
+          case "$EXT" in
+            rpm)
+              rpm2cpio ../payload/upstream.rpm | cpio -idmv
+              ;;
+            deb)
+              ar x ../payload/upstream.deb
+              tar -xf data.tar.*
+              ;;
+            AppImage)
+              chmod +x ../payload/upstream.AppImage
+              ../payload/upstream.AppImage --appimage-extract
+              mv squashfs-root/* .
+              ;;
+            zip)
+              7z x ../payload/upstream.zip
+              ;;
+          esac
+
+          # Thorium dizinlerini düzleştir
+          if [ -d opt/chromium.org/thorium ]; then
+            mkdir -p root_payload && mv opt/chromium.org/thorium/* root_payload/
+          elif [ -d opt/thorium-browser ]; then
+            mkdir -p root_payload && mv opt/thorium-browser/* root_payload/
+          else
+            mkdir -p root_payload && mv * root_payload/ 2>/dev/null || true
+          fi
+          cd ..
+
+      - name: Desktop Dosyasını Akıllı Denetle ve Güncelle (Python)
+        run: |
+          python3 - << 'EOF'
+          import os
+          import glob
+          import re
+
+          target_exec = "env NVD_BACKEND=direct __NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia /usr/bin/thorium-browser --ozone-platform=x11 --enable-features=VaapiVideoDecodeLinuxGL,VaapiVideoEncoderLinuxGL --ignore-gpu-blocklist --enable-zero-copy --use-gl=angle --use-angle=gl"
+          
+          # Çıkarılan arşivde mevcut desktop dosyalarını ara
+          desktop_matches = glob.glob('extract_dir/**/*.desktop', recursive=True)
+          output_desktop = 'thorium-browser.desktop'
+
+          if desktop_matches:
+              src_desktop = desktop_matches[0]
+              print(f"Mevcut desktop dosyası bulundu: {src_desktop}. Satırlar güncelleniyor...")
+              with open(src_desktop, 'r', encoding='utf-8', errors='ignore') as f:
+                  lines = f.readlines()
+
+              updated_lines = []
+              for line in lines:
+                  if line.strip().startswith('Exec='):
+                      # Ekstra argümanları (%U, --incognito vs.) koru
+                      parts = line.strip().split('Exec=', 1)[1].strip()
+                      extra_flags = ""
+                      for flag in ['%U', '%u', '--incognito', '--temp-profile', '--safe-mode', '--force-dark-mode']:
+                          if flag in parts and flag not in extra_flags:
+                              extra_flags += f" {flag}"
+                      
+                      updated_lines.append(f"Exec={target_exec}{extra_flags}\n")
+                  else:
+                      updated_lines.append(line)
+
+              with open(output_desktop, 'w', encoding='utf-8') as f:
+                  f.writelines(updated_lines)
+          else:
+              print("Desktop dosyası bulunamadı. Sıfırdan oluşturuluyor...")
+              full_content = f"""[Desktop Entry]
+          Version=1.0
+          Name=Thorium
+          GenericName=Web Browser
+          Comment=Access the Internet
+          Exec={target_exec} %U
+          StartupNotify=true
+          Terminal=false
+          Icon=thorium-browser
+          Type=Application
+          Categories=Network;WebBrowser;
+          MimeType=text/html;text/xml;application/xhtml+xml;x-scheme-handler/http;x-scheme-handler/https;
+          Actions=new-window;new-private-window;temp-profile;safe-mode;dark-mode;
+
+          [Desktop Action new-window]
+          Name=New Window
+          Exec={target_exec} %U
+
+          [Desktop Action new-private-window]
+          Name=New Incognito Window
+          Exec={target_exec} --incognito %U
+
+          [Desktop Action temp-profile]
+          Name=Open New Window with a temporary profile
+          Exec={target_exec} --temp-profile %U
+
+          [Desktop Action safe-mode]
+          Name=Open in Safe Mode
+          Exec={target_exec} --safe-mode %U
+
+          [Desktop Action dark-mode]
+          Name=Open in Dark Mode
+          Exec={target_exec} --force-dark-mode %U
+          """
+              # Indentation temizleme
+              clean_content = "\n".join([line.lstrip() for line in full_content.strip().splitlines()]) + "\n"
+              with open(output_desktop, 'w', encoding='utf-8') as f:
+                  f.write(clean_content)
+          EOF
+
+      - name: RPM ve SRPM Paketle
+        run: |
+          cd extract_dir/root_payload
+          tar -czf ../../upstream-payload.tar.gz *
+          cd ../..
+
+          mkdir -p ~/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+          cp upstream-payload.tar.gz ~/rpmbuild/SOURCES/
+          cp thorium-launcher.sh ~/rpmbuild/SOURCES/
+          cp thorium-browser.desktop ~/rpmbuild/SOURCES/
+          cp thorium-browser.metainfo.xml ~/rpmbuild/SOURCES/
+          cp thorium-browser.spec ~/rpmbuild/SPECS/
+
+          rpmbuild -bs \
+            --define "_version ${{ steps.fetch-assets.outputs.clean_version }}" \
+            --define "_release ${{ steps.counter.outputs.release_num }}" \
+            ~/rpmbuild/SPECS/thorium-browser.spec
+
+          mkdir -p out
+          cp ~/rpmbuild/SRPMS/*.src.rpm out/
+
+      - name: Copr Deposuna Gönder
+        env:
+          COPR_CONFIG: ${{ secrets.COPR_CONFIG }}
+        run: |
+          mkdir -p ~/.config
+          echo "$COPR_CONFIG" > ~/.config/copr
+          SRPM_FILE=$(ls out/*.src.rpm | head -n 1)
+          copr-cli build universish/Thorium "$SRPM_FILE"
