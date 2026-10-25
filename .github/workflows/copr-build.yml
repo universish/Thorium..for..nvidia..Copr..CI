@@ -252,8 +252,7 @@ jobs:
         run: |
           sed -i 's/^Example/#Example/g' /etc/freshclam.conf || true
           freshclam
-          
-
+      
       - name: Arka Kapı, ClamAV ve VirusTotal Güvenlik Taraması
         env:
           EXT: ${{ needs.check-update.outputs.ext }}
