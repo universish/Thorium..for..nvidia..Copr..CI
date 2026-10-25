@@ -197,6 +197,8 @@ https://github.com/universish/Thorium..for..nvidia..Copr..CI/blob/main/tests/spe
 
 ## 🛡️ Security & Integrity
 
+* **Scan location:** ClamAV, VirusTotal, and script/ELF checks run in the Fedora container on the **GitHub Actions virtual machine**, before SRPM creation. Fedora Copr only builds the submitted SRPM; the RPM spec does not install antivirus tools, download signatures, or run malware scans on Copr servers.
+* **Required scan gate:** ClamAV signature updates and scans must succeed. VirusTotal verification requires the `VIRUSTOTAL_API_KEY` repository Actions secret and must complete for both the upstream archive and the main Thorium ELF binary. Malware detections, scanner/API errors, upload failures, and analysis timeouts stop SRPM creation and Copr submission.
 * **Non-Invasive RPM Spec:** Packages do not tamper with root filesystem libraries; binaries reside in `/opt/thorium-browser/`.
 * **Reproducible Pipeline:** All builds are assembled inside official Fedora root containers and submitted to official Fedora Copr builders.
 * **License:** The packaging automation is provided under the [MIT License](https://www.google.com/search?q=LICENSE). Thorium Browser remains governed by its respective upstream licenses (BSD-3-Clause / Chromium Authors).

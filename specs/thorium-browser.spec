@@ -15,9 +15,9 @@
 # siyonizm eksenli politik-kurumsal etkilere açıklık riskine karşı Sıfır Güven
 # (Zero-Trust) ilkesi uygulanmaktadır.
 #
-# Bu spec dosyası; CI aşamasında VirusTotal API v3 ve ClamAV ile taranmış olan
-# paketi derleme esnasında (%check) ek ELF/RPATH, sembol ve betik bütünlük
-# testlerinden geçirerek arka kapı riskini bertaraf etmek üzere yapılandırılmıştır.
+# ClamAV, VirusTotal ve ELF/betik kontrolleri GitHub Actions sanal makinesinde,
+# SRPM hazırlanmadan önce zorunlu olarak çalışır. COPR yalnızca taramadan geçen
+# SRPM'yi derler; bu spec dosyası virüs taraması veya imza indirmesi yapmaz.
 # ==============================================================================
 
 Name:           thorium-browser
@@ -33,11 +33,7 @@ Source1:        thorium-launcher.sh
 Source2:        thorium-browser.desktop
 Source3:        thorium-browser.metainfo.xml
 
-BuildRequires:  binutils
-BuildRequires:  elfutils
-BuildRequires:  file
 BuildRequires:  desktop-file-utils
-BuildRequires:  clamav
 
 Requires:       libva
 Requires:       libva-utils
@@ -55,8 +51,8 @@ Thorium is an aggressive compiler-optimized fork of Chromium. This package
 provides automatic hardware acceleration routing: configuring VA-API direct
 backends for NVIDIA platforms, and standard Mesa hardware pipelines for
 Intel, AMD, and industrial graphical processing units. Repackaged under a
-strict Zero-Trust supply-chain security policy with multi-engine VirusTotal,
-ClamAV, and ELF backdoor verification.
+security policy with VirusTotal, ClamAV, and ELF/script checks in GitHub
+Actions before SRPM submission to Fedora Copr.
 
 %prep
 %setup -q -c -n thorium-extracted
@@ -98,30 +94,8 @@ cat << 'EOF' > %{buildroot}%{_sysconfdir}/thorium/thorium-flags.conf
 EOF
 
 %check
-# 1. Masaüstü başlatıcı doğrulaması
+# COPR'da yalnızca paket doğrulaması yapılır; güvenlik taraması GitHub Actions'tadır.
 desktop-file-validate %{buildroot}%{_datadir}/applications/thorium-browser.desktop || :
-
-# 2. XZ Utils (CVE-2024-3094) tarzı arka kapı, LD_PRELOAD ve şüpheli kabuk enjeksiyonu denetimi
-while IFS= read -r -d '' script_file; do
-    if grep -Eiq '(LD_PRELOAD|LD_AUDIT|base64[[:space:]]+-d|eval[[:space:]]+"\$\(|/dev/tcp/)' "$script_file"; then
-        echo "GÜVENLİK İHLALİ: Şüpheli arka kapı ifadesi bulundu: $script_file"
-        exit 1
-    fi
-done < <(find %{buildroot}/opt/thorium-browser -type f -exec file {} + | grep -i "script" | cut -d: -f1 | tr '\n' '\0')
-
-# 3. ELF ikili dosyalarında güvensiz RPATH / RUNPATH hijacking denetimi
-while IFS= read -r -d '' elf_file; do
-    rpath_out=$(readelf -d "$elf_file" 2>/dev/null | grep -E '(RPATH|RUNPATH)' || true)
-    if echo "$rpath_out" | grep -Eq '(/tmp|/var/tmp|/dev/shm|/home/)'; then
-        echo "GÜVENLİK İHLALİ: Güvensiz RPATH/RUNPATH tespit edildi: $elf_file"
-        exit 1
-    fi
-done < <(find %{buildroot}/opt/thorium-browser -type f -exec file {} + | grep -i "ELF" | cut -d: -f1 | tr '\n' '\0')
-
-# 4. Yerel ClamAV imza veritabanı mevcutsa derleme ortamında tarama yap
-if command -v clamscan >/dev/null 2>&1 && [ -d /var/lib/clamav ] && [ -n "$(ls -A /var/lib/clamav 2>/dev/null)" ]; then
-    clamscan -r --bell -i %{buildroot}/opt/thorium-browser
-fi
 
 %files
 /opt/thorium-browser
@@ -142,6 +116,9 @@ fi
 /usr/bin/gtk-update-icon-cache %{_datadir}/icons/hicolor &>/dev/null || :
 
 %changelog
+* Sun Oct 25 2026 universish <universish@users.noreply.github.com> - %{version}-%{release}
+- Run mandatory security scans only on the GitHub Actions runner before COPR submission.
+- Remove antivirus build dependencies and security scans from COPR builds.
 * Sat Oct 24 2026 universish <universish@users.noreply.github.com> - %{version}-%{release}
 - Added Zero-Trust supply-chain security verification (VirusTotal API v3, ClamAV, and XZ-style ELF/script backdoor checks).
 * Wed Oct 07 2026 universish <universish@users.noreply.github.com> - %{version}-%{release}

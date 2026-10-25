@@ -53,6 +53,10 @@ on:
 permissions:
   contents: write
 
+defaults:
+  run:
+    shell: bash
+
 concurrency:
   group: thorium-copr-sync
   cancel-in-progress: false
@@ -183,10 +187,11 @@ jobs:
           echo "release_num=$BUILD_NUM" >> "$GITHUB_OUTPUT"
 
   # ============================================================================
-  # 2. AŞAMA: İndirme, Arka Kapı / Virüs Taraması (ClamAV + VirusTotal) ve Paketleme
+  # 2. AŞAMA: GitHub Actions sanal makinesinde güvenlik taraması ve paketleme
+  # Fedora konteyneri GitHub runner üzerinde çalışır; bu aşama COPR'da çalışmaz.
   # ============================================================================
   package-srpm:
-    name: 2. Aşama - İndirme, Güvenlik Taraması ve Yeniden Paketleme
+    name: 2. Aşama - GitHub Actions Güvenlik Taraması ve SRPM Paketleme
     needs: check-update
     if: needs.check-update.outputs.has_update == 'true'
     runs-on: ubuntu-latest
@@ -248,12 +253,13 @@ jobs:
           fi
           cd ..
 
-      - name: Update ClamAV Database
+      - name: GitHub Actions üzerinde ClamAV İmzalarını Güncelle (Zorunlu)
         run: |
-          sed -i 's/^Example/#Example/g' /etc/freshclam.conf || true
+          set -euo pipefail
+          sed -i 's/^Example/#Example/' /etc/freshclam.conf
           freshclam
-      
-      - name: Arka Kapı, ClamAV ve VirusTotal Güvenlik Taraması
+
+      - name: GitHub Actions üzerinde Arka Kapı, ClamAV ve VirusTotal Taraması
         env:
           EXT: ${{ needs.check-update.outputs.ext }}
           VT_API_KEY: ${{ secrets.VIRUSTOTAL_API_KEY }}
@@ -288,9 +294,10 @@ jobs:
           echo "=================================================================="
           echo "[2/3] ClamAV Yerel İmza ve Zararlı Yazılım Taraması"
           echo "=================================================================="
-          sed -i 's/^Example/#Example/' /etc/freshclam.conf 2>/dev/null || true
-          freshclam --quiet || echo "Uyarı: freshclam veritabanı güncellenemedi, mevcut imzalarla devam ediliyor."
-          clamscan -r --bell -i "$ARCHIVE_PATH" "$PAYLOAD_DIR"
+          # Büyük Chromium ikililerini varsayılan boyut sınırı nedeniyle atlama.
+          # Tarama sınırına ulaşılması da başarısızlık sayılır.
+          clamscan -r -i --max-filesize=2000M --max-scansize=4000M \
+            --alert-exceeds-max=yes "$ARCHIVE_PATH" "$PAYLOAD_DIR"
           echo "ClamAV taraması temiz tamamlandı."
 
           echo "=================================================================="
@@ -316,7 +323,7 @@ jobs:
 
             if [ "$http_code" = "200" ]; then
               local malicious suspicious harmless undetected
-              malicious=$(jq -r '.data.attributes.last_analysis_stats.malicious // 0' vt_response.json)
+              malicious=$(jq -er '.data.attributes.last_analysis_stats.malicious | select(type == "number" and . >= 0 and floor == .)' vt_response.json)
               suspicious=$(jq -r '.data.attributes.last_analysis_stats.suspicious // 0' vt_response.json)
               harmless=$(jq -r '.data.attributes.last_analysis_stats.harmless // 0' vt_response.json)
               undetected=$(jq -r '.data.attributes.last_analysis_stats.undetected // 0' vt_response.json)
@@ -355,18 +362,24 @@ jobs:
                     echo "   Deneme ${attempt}/18 - Durum: ${status}"
                     if [ "$status" = "completed" ]; then
                       local mal_count
-                      mal_count=$(jq -r '.data.attributes.stats.malicious // 0' vt_analysis.json)
+                      mal_count=$(jq -er '.data.attributes.stats.malicious | select(type == "number" and . >= 0 and floor == .)' vt_analysis.json)
                       echo "   VirusTotal Analizi Tamamlandı ($label): Zararlı=$mal_count"
                       if [ "$mal_count" -gt 0 ]; then
                         echo "KRİTİK GÜVENLİK İHLALİ: Yüklenen [$label] dosyasında zararlı yazılım tespit edildi!"
                         exit 1
                       fi
-                      break
+                      return 0
                     fi
                   done
+                  echo "KRİTİK HATA: [$label] VirusTotal analizi zamanında tamamlanmadı. COPR'a gönderim durduruldu."
+                  exit 1
+                else
+                  echo "KRİTİK HATA: [$label] VirusTotal analiz kimliği alınamadı."
+                  exit 1
                 fi
               else
-                echo "   Uyarı: Dosya boyutu sınırları aştığı veya yükleme URL'si alınamadığı için yükleme atlandı."
+                echo "KRİTİK HATA: [$label] VirusTotal'a yüklenemedi (boyut sınırı veya eksik yükleme URL'si)."
+                exit 1
               fi
             else
               echo "KRİTİK HATA: VirusTotal API beklenmeyen bir HTTP kodu döndürdü: $http_code"
@@ -389,6 +402,9 @@ jobs:
 
           if [ -n "$MAIN_BIN" ]; then
             check_virustotal "$MAIN_BIN" "Ana-Thorium-ELF-Binary"
+          else
+            echo "KRİTİK HATA: VirusTotal ile doğrulanacak ana Thorium ELF dosyası bulunamadı."
+            exit 1
           fi
 
           echo "Tüm güvenlik, arka kapı, ClamAV ve VirusTotal kontrolleri başarıyla geçildi."
