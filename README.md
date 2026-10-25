@@ -1,10 +1,10 @@
-# Thorium Browser (AVX2 & ARM64) for Fedora Copr
+# Thorium Browser (AVX2 & ARM64) for Copr
 
 [![Fedora Copr](https://img.shields.io/badge/Copr-universish%2FThorium-blue.svg)](https://copr.fedorainfracloud.org/coprs/universish/Thorium/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Arch-x86__64%20(AVX2)%20%7C%20aarch64-brightgreen.svg)]()
 
-Enterprise-grade, automated RPM packaging and continuous delivery pipeline for **Thorium Browser** on Fedora Linux. 
+Automated RPM packaging and continuous delivery pipeline for **Thorium Browser** on the enabled Copr distributions.
 
 This repository synchronizes upstream builds from [Alex313031/thorium](https://github.com/Alex313031/thorium) and [gz83/thorium](https://github.com/gz83/thorium), packaging them for **Fedora Copr** with specialized GPU runtime routing.
 
@@ -198,7 +198,9 @@ https://github.com/universish/Thorium..for..nvidia..Copr..CI/blob/main/tests/spe
 ## 🛡️ Security & Integrity
 
 * **Scan location:** ClamAV, VirusTotal, and script/ELF checks run in the Fedora container on the **GitHub Actions virtual machine**, before SRPM creation. Fedora Copr only builds the submitted SRPM; the RPM spec does not install antivirus tools, download signatures, or run malware scans on Copr servers.
-* **Required scan gate:** ClamAV signature updates and scans must succeed. VirusTotal verification requires the `VIRUSTOTAL_API_KEY` repository Actions secret and must complete for both the upstream archive and the main Thorium ELF binary. Malware detections, scanner/API errors, upload failures, and analysis timeouts stop SRPM creation and Copr submission.
+* **Required scan gate:** ClamAV signature updates, the recursive ClamAV scan, and the local script/ELF checks must succeed before SRPM creation. Any positive VirusTotal malware detection also stops publication.
+* **VirusTotal availability:** When `VIRUSTOTAL_API_KEY` is configured, the workflow checks the upstream archive and each extracted regular file by SHA-256. Unknown hashes are uploaded when the API permits; oversized samples are compressed for a separate scan if possible. A SHA-256 query can retrieve only an existing report; it cannot submit a file for scanning. Missing credentials, API quota or upload failures, and analysis timeouts produce a GitHub Actions warning and skip remaining VirusTotal checks. Publication may proceed after the mandatory local gates pass, without a VirusTotal verdict on every file.
+* **Copr targets:** The workflow selects matching AVX2 x86_64 and arm64 Linux assets from the same upstream release, scans and packages each architecture separately, then submits each SRPM to every enabled Copr chroot for that architecture. The Copr project currently enables 51 targets across Alma, CentOS Stream, EPEL, Fedora, openSUSE, and RHEL. Copr builds run asynchronously after submission. A built RPM may still be uninstallable or unusable on an older distribution if its prebuilt Thorium binary requires a newer glibc or other system libraries; a Copr target alone cannot make that binary compatible.
 * **Non-Invasive RPM Spec:** Packages do not tamper with root filesystem libraries; binaries reside in `/opt/thorium-browser/`.
 * **Reproducible Pipeline:** All builds are assembled inside official Fedora root containers and submitted to official Fedora Copr builders.
 * **License:** The packaging automation is provided under the [MIT License](https://www.google.com/search?q=LICENSE). Thorium Browser remains governed by its respective upstream licenses (BSD-3-Clause / Chromium Authors).

@@ -18,6 +18,12 @@ EOF
 fi
 
 # 2. Donanım ve GPU Tanılama
+# x86_64 paketleri AVX2 derlemesi taşır; v2/standart chroot etiketi AVX2 garantilemez.
+if [ "$(uname -m)" = "x86_64" ] && ! grep -qw avx2 /proc/cpuinfo; then
+    echo "Thorium AVX2 paketi bu işlemcide çalışamaz (AVX2 gerekli)." >&2
+    exit 1
+fi
+
 # NVIDIA GPU ve sürücüsü aktifse offload ve VA-API backend değişkenlerini ata
 if [ -e /dev/nvidia0 ] || [ -e /proc/driver/nvidia ] || command -v nvidia-smi >/dev/null 2>&1; then
     export NVD_BACKEND="${NVD_BACKEND:-direct}"

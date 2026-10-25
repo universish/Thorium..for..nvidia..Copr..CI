@@ -15,8 +15,9 @@
 # siyonizm eksenli politik-kurumsal etkilere açıklık riskine karşı Sıfır Güven
 # (Zero-Trust) ilkesi uygulanmaktadır.
 #
-# ClamAV, VirusTotal ve ELF/betik kontrolleri GitHub Actions sanal makinesinde,
-# SRPM hazırlanmadan önce zorunlu olarak çalışır. COPR yalnızca taramadan geçen
+# ClamAV ve ELF/betik kontrolleri GitHub Actions sanal makinesinde zorunludur.
+# VirusTotal erişimi başarısızsa uyarı verilir ve yerel kontroller geçerse
+# SRPM hazırlanabilir. COPR yalnızca yerel taramadan geçen
 # SRPM'yi derler; bu spec dosyası virüs taraması veya imza indirmesi yapmaz.
 # ==============================================================================
 
@@ -26,21 +27,16 @@ Release:        1%{?dist}
 Summary:        Compiler-optimized Chromium fork tuned for NVIDIA, AMD, and Intel hardware acceleration
 License:        BSD-3-Clause and MIT
 URL:            https://thorium.rocks/
-ExclusiveArch:  x86_64 aarch64
+# CI replaces this with the architecture of each scanned upstream payload.
+ExclusiveArch:  x86_64
 
 Source0:        upstream-payload.tar.gz
 Source1:        thorium-launcher.sh
 Source2:        thorium-browser.desktop
 Source3:        thorium-browser.metainfo.xml
 
-BuildRequires:  desktop-file-utils
-
-Requires:       libva
-Requires:       libva-utils
-Requires:       mesa-va-drivers
-Recommends:     nvidia-vaapi-driver
-Recommends:     libva-intel-driver
-Recommends:     intel-media-driver
+# Runtime library dependencies are generated from the bundled ELF files.
+# GPU driver package names differ between the enabled distributions.
 
 # Fedora debuginfo üretimini ikili pakette kapatır
 %global debug_package %{nil}
@@ -51,8 +47,8 @@ Thorium is an aggressive compiler-optimized fork of Chromium. This package
 provides automatic hardware acceleration routing: configuring VA-API direct
 backends for NVIDIA platforms, and standard Mesa hardware pipelines for
 Intel, AMD, and industrial graphical processing units. Repackaged under a
-security policy with VirusTotal, ClamAV, and ELF/script checks in GitHub
-Actions before SRPM submission to Fedora Copr.
+security policy with mandatory ClamAV and ELF/script checks, plus best-effort
+VirusTotal checks in GitHub Actions before SRPM submission to Fedora Copr.
 
 %prep
 %setup -q -c -n thorium-extracted
@@ -93,10 +89,6 @@ cat << 'EOF' > %{buildroot}%{_sysconfdir}/thorium/thorium-flags.conf
 --use-angle=gl
 EOF
 
-%check
-# COPR'da yalnızca paket doğrulaması yapılır; güvenlik taraması GitHub Actions'tadır.
-desktop-file-validate %{buildroot}%{_datadir}/applications/thorium-browser.desktop || :
-
 %files
 /opt/thorium-browser
 %{_bindir}/thorium-browser
@@ -106,14 +98,14 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/thorium-browser.deskt
 %config(noreplace) %{_sysconfdir}/thorium/thorium-flags.conf
 
 %post
-/usr/bin/update-desktop-database %{_datadir}/applications &> /dev/null || :
-/bin/touch --no-create %{_datadir}/icons/hicolor &>/dev/null || :
-/usr/bin/gtk-update-icon-cache %{_datadir}/icons/hicolor &>/dev/null || :
+/usr/bin/update-desktop-database %{_datadir}/applications >/dev/null 2>&1 || :
+/bin/touch --no-create %{_datadir}/icons/hicolor >/dev/null 2>&1 || :
+/usr/bin/gtk-update-icon-cache %{_datadir}/icons/hicolor >/dev/null 2>&1 || :
 
 %postun
-/usr/bin/update-desktop-database %{_datadir}/applications &> /dev/null || :
-/bin/touch --no-create %{_datadir}/icons/hicolor &>/dev/null || :
-/usr/bin/gtk-update-icon-cache %{_datadir}/icons/hicolor &>/dev/null || :
+/usr/bin/update-desktop-database %{_datadir}/applications >/dev/null 2>&1 || :
+/bin/touch --no-create %{_datadir}/icons/hicolor >/dev/null 2>&1 || :
+/usr/bin/gtk-update-icon-cache %{_datadir}/icons/hicolor >/dev/null 2>&1 || :
 
 %changelog
 * Sun Oct 25 2026 universish <universish@users.noreply.github.com> - %{version}-%{release}
