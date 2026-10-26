@@ -49,6 +49,16 @@ class VirusTotalTests(unittest.TestCase):
                     vt.upload("key", sample, "sample")
             retry.assert_called_once_with("key", sample, "sample")
 
+    def test_invalid_large_upload_url_retries_compressed_sample(self):
+        with tempfile.TemporaryDirectory() as directory:
+            sample = Path(directory) / "sample"
+            sample.write_bytes(b"sample")
+            with mock.patch.object(vt, "DIRECT_LIMIT", 1):
+                with mock.patch.object(vt, "request", return_value=(200, {"data": "https://unexpected.example/upload"})):
+                    with mock.patch.object(vt, "compressed_retry") as retry:
+                        vt.upload("key", sample, "sample")
+            retry.assert_called_once_with("key", sample, "sample")
+
     def test_oversized_sample_compresses_and_scans_without_treating_it_as_original(self):
         with tempfile.TemporaryDirectory() as directory:
             sample = Path(directory) / "sample"
@@ -75,7 +85,7 @@ class VirusTotalTests(unittest.TestCase):
                     vt.upload("key", sample, "sample")
             retry.assert_not_called()
 
-    def test_hash_queries_prioritize_archive_and_main_binary(self):
+    def test_hash_queries_prioritize_main_binary_and_query_archive_last(self):
         with tempfile.TemporaryDirectory() as directory:
             archive = Path(directory) / "upstream.rpm"
             archive.write_bytes(b"archive")
@@ -95,7 +105,7 @@ class VirusTotalTests(unittest.TestCase):
                 with mock.patch.object(sys, "argv", ["vt", str(archive), str(payload), str(main_binary)]):
                     with mock.patch.object(vt, "request", side_effect=reply):
                         self.assertEqual(vt.main(), 0)
-            self.assertEqual(queried, [hashlib.sha256(data).hexdigest() for data in (b"archive", b"main", b"other")])
+            self.assertEqual(queried, [hashlib.sha256(data).hexdigest() for data in (b"main", b"other", b"archive")])
 
     def test_api_error_warns_and_allows_local_gate_to_publish(self):
         with tempfile.TemporaryDirectory() as directory:

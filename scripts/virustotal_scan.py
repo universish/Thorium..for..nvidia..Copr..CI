@@ -125,8 +125,18 @@ def upload(key, path, label, allow_compress=True):
             raise Unavailable(f"{label}: upload URL request returned HTTP {status}")
         url = body["data"]
         parsed = urlparse(url)
-        if parsed.hostname not in {"www.virustotal.com", "virustotal.com"} or parsed.scheme not in {"http", "https"}:
-            raise Unavailable(f"{label}: invalid VirusTotal upload URL")
+        host = (parsed.hostname or "").lower()
+        try:
+            port = parsed.port
+        except ValueError:
+            port = -1
+        if (not (host == "virustotal.com" or host.endswith(".virustotal.com"))
+                or parsed.scheme not in {"http", "https"}
+                or parsed.username is not None or parsed.password is not None
+                or port not in {None, 80, 443}):
+            if allow_compress:
+                return compressed_retry(key, path, label)
+            raise Unavailable(f"{label}: invalid VirusTotal upload URL host ({host or 'missing'})")
         # VT's documented upload URL example uses HTTP. Send the API key only via TLS.
         if parsed.scheme == "http":
             url = parsed._replace(scheme="https").geturl()
@@ -183,8 +193,11 @@ def main():
     if not key:
         warn("VIRUSTOTAL_API_KEY is missing; continuing after mandatory local scans")
         return 0
-    paths = [args.archive, args.main_binary]
+    # Query the executable first: an archive upload failure must not prevent
+    # checking the most important extracted sample by its hash.
+    paths = [args.main_binary]
     paths.extend(sorted(path for path in args.payload.rglob("*") if path.is_file() and not path.is_symlink()))
+    paths.append(args.archive)
     seen = set()
     try:
         for path in paths:
