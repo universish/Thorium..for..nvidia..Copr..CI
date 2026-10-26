@@ -484,6 +484,11 @@ jobs:
           echo "$COPR_CONFIG" > ~/.config/copr
           PROJECT_JSON=$(curl -fsSL --retry 3 \
             'https://copr.fedorainfracloud.org/api_3/project?ownername=universish&projectname=Thorium')
+          # The custom chroot has no base repository or shell until configured.
+          # Keep it pinned to the Fedora 44 x86_64 repositories chosen for it.
+          CUSTOM_REPOS='https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/ https://dl.fedoraproject.org/pub/fedora/linux/updates/44/Everything/x86_64/'
+          copr-cli edit-chroot --repos "$CUSTOM_REPOS" --packages '@build' \
+            universish/Thorium/custom-1-x86_64
           for arch in x86_64 aarch64; do
             SRPM_FILE=$(find "out/thorium-srpm-${arch}" -maxdepth 1 -name '*.src.rpm' -print -quit)
             if [ -z "$SRPM_FILE" ]; then

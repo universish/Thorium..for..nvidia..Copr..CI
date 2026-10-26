@@ -1,0 +1,44 @@
+name: Repair Fedora 44 custom Copr chroot
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_build_id:
+        description: 'Previously scanned x86_64 Copr build ID to reuse'
+        required: true
+        default: '11206594'
+
+permissions:
+  contents: read
+
+jobs:
+  configure-and-build:
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:44
+    steps:
+      - name: Install Copr tools
+        run: dnf install -y copr-cli curl jq
+
+      - name: Configure Fedora 44 base and resubmit scanned SRPM
+        env:
+          COPR_CONFIG: ${{ secrets.COPR_CONFIG }}
+          SOURCE_BUILD_ID: ${{ inputs.source_build_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.config
+          printf '%s\n' "$COPR_CONFIG" > ~/.config/copr
+          chmod 600 ~/.config/copr
+
+          BUILD_JSON=$(curl -fsSL --retry 3 \
+            "https://copr.fedorainfracloud.org/api_3/build/${SOURCE_BUILD_ID}")
+          jq -e --arg id "$SOURCE_BUILD_ID" \
+            '.id == ($id | tonumber) and .ownername == "universish" and .projectname == "Thorium" and .source_package.name == "thorium-browser" and (.chroots | index("fedora-44-x86_64") != null)' \
+            <<< "$BUILD_JSON" > /dev/null
+          SOURCE_URL=$(jq -er '.source_package.url' <<< "$BUILD_JSON")
+
+          CUSTOM_REPOS='https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/ https://dl.fedoraproject.org/pub/fedora/linux/updates/44/Everything/x86_64/'
+          copr-cli edit-chroot --repos "$CUSTOM_REPOS" --packages '@build' \
+            universish/Thorium/custom-1-x86_64
+          copr-cli build --nowait universish/Thorium "$SOURCE_URL" \
+            --chroot custom-1-x86_64
