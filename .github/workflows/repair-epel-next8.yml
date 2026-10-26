@@ -62,7 +62,13 @@ jobs:
               <<< "$results_json")
             curl -fSL --retry 3 "${result_url}${rpm_name}" -o "$rpm_name"
             [ "$(rpm -qp --qf '%{ARCH}' "$rpm_name")" = "$arch" ]
+            rpm_version=$(rpm -qp --qf '%{VERSION}' "$rpm_name")
+            rpm_release=$(rpm -qp --qf '%{RELEASE}' "$rpm_name")
+            mkdir -p "upload-${arch}"
+            mv "$rpm_name" "upload-${arch}/"
+            tar -czf "upload-${arch}.tar.gz" "upload-${arch}"
             echo "${rpm_name} -> ${target_chroot}"
-            copr-cli uploadrpm --nowait universish/Thorium "$rpm_name" \
+            copr-cli uploadrpm --nowait universish/Thorium "upload-${arch}.tar.gz" \
+              --name thorium-browser --version "$rpm_version" --release "$rpm_release" \
               --chroot "$target_chroot"
           done

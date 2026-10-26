@@ -38,7 +38,7 @@ jobs:
           SOURCE_URL=$(jq -er '.source_package.url' <<< "$BUILD_JSON")
 
           CUSTOM_REPOS='https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/ https://dl.fedoraproject.org/pub/fedora/linux/updates/44/Everything/x86_64/'
-          copr-cli edit-chroot --repos "$CUSTOM_REPOS" --packages '@build' \
+          copr-cli edit-chroot --repos "$CUSTOM_REPOS" --packages 'fedora-release rpm-build bash coreutils tar gzip' \
             universish/Thorium/custom-1-x86_64
           copr-cli build --nowait universish/Thorium "$SOURCE_URL" \
             --chroot custom-1-x86_64
